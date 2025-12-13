@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>Saransh</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>We need access to speech recognition to transcribe audio documents.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>We need access to your microphone to record and transcribe audio.</string>
+    <key>UISupportsDocumentBrowser</key>
+    <true/>
+    <key>UIFileSharingEnabled</key>
+    <true/>
+    <key>LSSupportsOpeningDocumentsInPlace</key>
+    <true/>
+</dict>
+</plist>
