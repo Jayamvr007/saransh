@@ -256,8 +256,8 @@ class DocumentProcessingService {
         
         print("✅ OCR complete. Total extracted: \(allText.count) characters")
         
-        // ✅ IMPROVED: Better validation
-        let cleanedText = allText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // ✅ IMPROVED: Comprehensive text cleaning
+        let cleanedText = cleanExtractedText(allText)
         if cleanedText.count < 20 {
             throw DocumentError.noTextContent
         }
@@ -481,3 +481,41 @@ class DocumentProcessingService {
             return docMetadata
         }
     }
+    
+    // MARK: - Text Cleaning and Post-processing
+    
+    /// Comprehensive text cleaning that removes artifacts while preserving content quality
+    func cleanExtractedText(_ text: String) -> String {
+        var cleaned = text
+        
+        // 1. Fix common OCR errors
+        cleaned = cleaned.replacingOccurrences(of: "l0", with: "10", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "O0", with: "00", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "l1", with: "11", options: .regularExpression)
+        
+        // 2. Fix hyphens used for line breaks (keep dashes between words)
+        cleaned = cleaned.replacingOccurrences(of: "\\w-\\s+", with: "", options: .regularExpression)
+        
+        // 3. Normalize multiple spaces and tabs
+        cleaned = cleaned.replacingOccurrences(of: "\\t+", with: " ", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "  +", with: " ", options: .regularExpression)
+        
+        // 4. Normalize line breaks (collapse multiple newlines to max 2)
+        cleaned = cleaned.replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
+        
+        // 5. Remove common page formatting artifacts
+        cleaned = cleaned.replacingOccurrences(of: "\\b(page|pg\\.?|p\\.?\\s*\\d+)\\b", with: "", options: [.regularExpression, .caseInsensitive])
+        cleaned = cleaned.replacingOccurrences(of: "© \\d{4}-?\\d*", with: "", options: .regularExpression)
+        
+        // 6. Clean up malformed punctuation
+        cleaned = cleaned.replacingOccurrences(of: "\\.{2,}", with: ".", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "\\?{2,}", with: "?", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "!{2,}", with: "!", options: .regularExpression)
+        
+        // 7. Remove leading/trailing whitespace and normalize
+        cleaned = cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
+        
+        return cleaned
+    }
+
+

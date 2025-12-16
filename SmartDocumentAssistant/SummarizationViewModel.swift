@@ -271,13 +271,16 @@ class SummarizationViewModel: ObservableObject {
     }
     
     private func calculateAdaptiveSummaryLength(pages: Int) -> Int {
+        // Adaptive summary length based on content size
+        // Uses logarithmic scaling to avoid extremely long summaries for huge documents
         switch pages {
-        case 0...10: return 5
-        case 11...50: return 10
-        case 51...100: return 15
-        case 101...200: return 25
-        case 201...400: return 35
-        default: return 50
+        case 0...5:     return 3    // Very short docs: 3 points
+        case 6...15:    return 5    // Short docs: 5 points
+        case 16...40:   return 7    // Medium-short: 7 points
+        case 41...100:  return 10   // Medium: 10 points
+        case 101...250: return 15   // Long: 15 points
+        case 251...500: return 20   // Very long: 20 points
+        default:        return min(30, Int(sqrt(Double(pages)))) // Huge docs: scale with sqrt
         }
     }
     
@@ -290,17 +293,23 @@ class SummarizationViewModel: ObservableObject {
         let chunkPerStrata = max(1, totalChunks / strataCount)
         var selectedPoints: [String] = []
         
+        // Select representative points from each strata
         for stratum in 0..<strataCount {
             let startChunk = stratum * chunkPerStrata
             let endChunk = min((stratum + 1) * chunkPerStrata, totalChunks)
             let summariesInStratum = chunkSummaries.filter {
                 $0.chunkIndex >= startChunk && $0.chunkIndex < endChunk
             }
-            if let representative = summariesInStratum.first {
+            
+            // Pick the middle chunk in the stratum for better representation
+            if !summariesInStratum.isEmpty {
+                let middleIndex = summariesInStratum.count / 2
+                let representative = summariesInStratum[middleIndex]
                 selectedPoints.append(contentsOf: representative.points)
             }
         }
         
+        // If we have too many points, perform final filtering with TF-IDF
         if selectedPoints.count > finalPointCount {
             let combinedText = selectedPoints.joined(separator: " ")
             return coreMLService.summarizeTextAsPoints(combinedText, sentenceCount: finalPointCount)

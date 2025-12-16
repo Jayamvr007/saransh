@@ -130,9 +130,7 @@ class CoreMLService {
         return Array(bestCandidates.values)
     }
     
-    // Add this method to CoreMLService.swift
-
-    // MARK: - Summarization as Bullet Points
+    // MARK: - Summarization as Bullet Points with TF-IDF & Position Scoring
     func summarizeTextAsPoints(_ text: String, sentenceCount: Int = 5) -> [String] {
         let cleanedText = sanitizeDocumentText(text)
         guard !cleanedText.isEmpty else { return [] }
@@ -140,17 +138,63 @@ class CoreMLService {
         let sentences = extractSentences(from: cleanedText)
         guard sentences.count > sentenceCount else { return sentences }
         
-        let sentenceVectors = sentences.map { sentenceVector(for: $0) }
+        // Score sentences using TF-IDF, position, and semantic similarity
+        let scoredSentences = scoreSentencesByImportance(sentences)
         
-        guard let documentCentroid = computeCentroid(of: sentenceVectors) else {
-            return Array(sentences.prefix(sentenceCount))
+        // Select top N sentences
+        let topCount = min(sentenceCount, sentences.count)
+        let topSentences = scoredSentences
+            .sorted { $0.score > $1.score }
+            .prefix(topCount)
+            .sorted { $0.originalIndex < $1.originalIndex }
+            .map { $0.sentence }
+        
+        return topSentences
+    }
+    
+    // MARK: - Sentence Scoring with Multiple Factors
+    private func scoreSentencesByImportance(_ sentences: [String]) -> [ScoredSentence] {
+        // Calculate word frequencies for TF-IDF
+        let allText = sentences.joined(separator: " ")
+        let wordFreq = calculateTermFrequency(allText)
+        
+        let maxFreq = wordFreq.values.max() ?? 1
+        
+        // Score each sentence
+        return sentences.enumerated().map { index, sentence in
+            let words = sentence.lowercased().split(separator: " ").map(String.init)
+            
+            // TF-IDF Score (0.6 weight)
+            var tfidfScore: Double = 0
+            for word in words where !universalStopWords.contains(word) && word.count > 2 {
+                let frequency = Double(wordFreq[word] ?? 0)
+                let tf = frequency / Double(maxFreq)
+                let idf = log(Double(sentences.count) / (Double(wordFreq.filter { $0.value > 0 && $0.key == word }.count) + 1))
+                tfidfScore += tf * idf
+            }
+            
+            // Position Score (0.2 weight) - Beginning sentences are more important
+            let positionScore = Double(sentences.count - index) / Double(sentences.count)
+            
+            // Length Score (0.1 weight) - Moderate length is better
+            let wordCount = words.count
+            let lengthScore = min(1.0, Double(wordCount) / 30.0)
+            
+            // Semantic similarity to document (0.1 weight)
+            let sentenceVectors = [sentenceVector(for: sentence)]
+            let allVectors = sentences.map { sentenceVector(for: $0) }
+            let documentCentroid = computeCentroid(of: allVectors) ?? Array(repeating: 0.0, count: 300)
+            let semanticScore = sentenceVectors.isEmpty ? 0.0 : cosineSimilarity(sentenceVectors[0], documentCentroid)
+            
+            // Combined weighted score
+            let totalScore = (tfidfScore * 0.6) + (positionScore * 0.2) + (lengthScore * 0.1) + (semanticScore * 0.1)
+            
+            return ScoredSentence(
+                sentence: sentence,
+                score: totalScore,
+                originalIndex: index
+            )
         }
-        
-        let scored = sentences.indices.map { ($0, cosineSimilarity(sentenceVectors[$0], documentCentroid)) }
-        let top = scored.sorted { $0.1 > $1.1 }.prefix(sentenceCount).map { $0.0 }
-        
-        // Return as array (preserving order)
-        return top.sorted().map { sentences[$0] }
     }
 
     
@@ -212,9 +256,20 @@ class CoreMLService {
     // MARK: - Helpers (Unchanged)
     
     private func sanitizeDocumentText(_ text: String) -> String {
-        return text.replacingOccurrences(of: "\n", with: " ")
-                   .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
-                   .trimmingCharacters(in: .whitespacesAndNewlines)
+        var cleaned = text
+        
+        // Remove excessive whitespace
+        cleaned = cleaned.replacingOccurrences(of: "\n", with: " ")
+        cleaned = cleaned.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        
+        // Remove common artifacts (page numbers, headers/footers patterns)
+        cleaned = cleaned.replacingOccurrences(of: "\\b(page|chapter|section)\\s*\\d+\\b", with: "", options: [.regularExpression, .caseInsensitive])
+        
+        // Remove multiple dots or dashes (cleaning)
+        cleaned = cleaned.replacingOccurrences(of: "\\.{2,}", with: ".", options: .regularExpression)
+        cleaned = cleaned.replacingOccurrences(of: "\\-{2,}", with: "-", options: .regularExpression)
+        
+        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     private func extractSentences(from text: String) -> [String] {
@@ -263,4 +318,12 @@ class CoreMLService {
     func classifyDocument(_ text: String) -> String? {
         return documentClassifier?.predictedLabel(for: text)
     }
+}
+
+// MARK: - Helper Structures
+
+struct ScoredSentence {
+    let sentence: String
+    let score: Double
+    let originalIndex: Int
 }
